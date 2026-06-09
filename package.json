@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "migrate": "node --env-file=.env.local scripts/migrate.mjs",
-    "grant-admin": "node --env-file=.env.local scripts/grant-admin.mjs"
+    "grant-admin": "node --env-file=.env.local scripts/grant-admin.mjs",
+    "bootstrap-admin": "node --env-file=.env.local scripts/bootstrap-admin.mjs"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",

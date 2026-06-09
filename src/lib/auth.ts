@@ -45,12 +45,16 @@ function shouldUseSecureCookies() {
 }
 
 async function readAccountRole(email: string) {
-  return queryOne<{ is_admin: boolean }>(
-    `select is_admin
-    from participants
-    where email = $1`,
-    [email.trim().toLowerCase()],
-  );
+  try {
+    return await queryOne<{ is_admin: boolean }>(
+      `select is_admin
+      from participants
+      where email = $1`,
+      [email.trim().toLowerCase()],
+    );
+  } catch {
+    return "unknown" as const;
+  }
 }
 
 function encodeSession(payload: ParticipantSession | AdminSession) {
@@ -178,6 +182,10 @@ export async function getParticipantSession() {
 
   const account = await readAccountRole(session.email);
 
+  if (account === "unknown") {
+    return session;
+  }
+
   if (!account || account.is_admin) {
     return null;
   }
@@ -195,6 +203,10 @@ export async function getAdminSession() {
   }
 
   const account = await readAccountRole(session.email);
+
+  if (account === "unknown") {
+    return session;
+  }
 
   if (!account || !account.is_admin) {
     return null;
