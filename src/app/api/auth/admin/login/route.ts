@@ -1,16 +1,19 @@
 import { NextResponse } from "next/server";
-import { assertAdminToken } from "@/lib/admin";
 import { setAdminSession } from "@/lib/auth";
+import { authenticateAdmin } from "@/lib/sweepstakes";
 
 export async function POST(request: Request) {
   try {
-    const { token } = (await request.json()) as { token?: string };
-    assertAdminToken(token ?? null);
+    const { email, pin } = (await request.json()) as {
+      email?: string;
+      pin?: string;
+    };
+    const admin = await authenticateAdmin(email ?? "", pin ?? "");
 
     const response = NextResponse.json({
-      message: "Admin session created.",
+      message: `Welcome back, ${admin.fullName}.`,
     });
-    setAdminSession(response);
+    setAdminSession(response, admin.email);
     return response;
   } catch (error) {
     const message =

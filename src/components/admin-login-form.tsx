@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation";
 
 export function AdminLoginForm() {
   const router = useRouter();
-  const [token, setToken] = useState("");
+  const [email, setEmail] = useState("");
+  const [pin, setPin] = useState("");
   const [message, setMessage] = useState("");
   const [isPending, startTransition] = useTransition();
 
@@ -19,7 +20,7 @@ export function AdminLoginForm() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ token }),
+        body: JSON.stringify({ email, pin }),
       });
 
       const payload = (await response.json()) as { message: string };
@@ -37,13 +38,24 @@ export function AdminLoginForm() {
   return (
     <form className="auth-form" onSubmit={handleSubmit}>
       <div className="field">
-        <label htmlFor="adminLoginToken">Admin token</label>
+        <label htmlFor="adminLoginEmail">Admin email</label>
         <input
-          id="adminLoginToken"
+          id="adminLoginEmail"
+          type="email"
+          value={email}
+          onChange={(event) => setEmail(event.target.value)}
+          placeholder="organiser@burn.com"
+          required
+        />
+      </div>
+      <div className="field">
+        <label htmlFor="adminLoginPin">Admin PIN</label>
+        <input
+          id="adminLoginPin"
           type="password"
-          value={token}
-          onChange={(event) => setToken(event.target.value)}
-          placeholder="Enter the organiser token"
+          value={pin}
+          onChange={(event) => setPin(event.target.value)}
+          placeholder="4 to 8 digits"
           required
         />
       </div>

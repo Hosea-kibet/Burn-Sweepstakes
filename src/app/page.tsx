@@ -65,7 +65,7 @@ export default async function Home() {
           </p>
           <ul className="mini-list">
             <li>Participant login with email + PIN</li>
-            <li>Admin login with organiser token</li>
+            <li>Admin login with email + PIN</li>
             <li>Private dashboards with tournament insights</li>
           </ul>
         </div>

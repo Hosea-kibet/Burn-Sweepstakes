@@ -8,6 +8,7 @@ import {
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import type { NextResponse } from "next/server";
+import { queryOne } from "@/lib/db";
 
 type ParticipantSession = {
   role: "participant";
@@ -41,6 +42,15 @@ function signValue(value: string) {
 
 function shouldUseSecureCookies() {
   return process.env.NODE_ENV === "production";
+}
+
+async function readAccountRole(email: string) {
+  return queryOne<{ is_admin: boolean }>(
+    `select is_admin
+    from participants
+    where email = $1`,
+    [email.trim().toLowerCase()],
+  );
 }
 
 function encodeSession(payload: ParticipantSession | AdminSession) {
@@ -160,13 +170,37 @@ export function clearSessions(response: NextResponse) {
 export async function getParticipantSession() {
   const store = await cookies();
   const raw = store.get(PARTICIPANT_COOKIE)?.value;
-  return decodeSession<ParticipantSession>(raw);
+  const session = decodeSession<ParticipantSession>(raw);
+
+  if (!session) {
+    return null;
+  }
+
+  const account = await readAccountRole(session.email);
+
+  if (!account || account.is_admin) {
+    return null;
+  }
+
+  return session;
 }
 
 export async function getAdminSession() {
   const store = await cookies();
   const raw = store.get(ADMIN_COOKIE)?.value;
-  return decodeSession<AdminSession>(raw);
+  const session = decodeSession<AdminSession>(raw);
+
+  if (!session) {
+    return null;
+  }
+
+  const account = await readAccountRole(session.email);
+
+  if (!account || !account.is_admin) {
+    return null;
+  }
+
+  return session;
 }
 
 export async function requireParticipantSession() {

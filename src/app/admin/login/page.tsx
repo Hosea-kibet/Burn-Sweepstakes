@@ -7,8 +7,8 @@ export default function AdminLoginPage() {
         <p className="eyebrow">Admin login</p>
         <h1>Open the organiser dashboard</h1>
         <p className="hero-text">
-          Sign in with the admin token to run the draw and monitor every
-          participant.
+          Sign in with your admin email and PIN to run the draw, manage roles,
+          and monitor every participant.
         </p>
         <AdminLoginForm />
       </section>

@@ -1,7 +1,7 @@
 import { randomInt } from "crypto";
 import { hashPin, validatePin, verifyPin } from "@/lib/auth";
 import { ENTRY_FEE, MAX_PARTICIPANTS } from "@/lib/constants";
-import { query, queryOne, hasAdminAccess, isDatabaseConfigured } from "@/lib/db";
+import { query, queryOne, isDatabaseConfigured } from "@/lib/db";
 import { getTeamTrackingSnapshot, type TeamTrackingSnapshot } from "@/lib/football-data";
 import { WORLD_CUP_TEAMS } from "@/lib/teams";
 
@@ -16,6 +16,7 @@ export type ParticipantRow = {
   department: string;
   phone: string;
   location: string;
+  is_admin: boolean;
   team_preferences: string[];
   assigned_team: string | null;
   assignment_rank: number | null;
@@ -45,6 +46,7 @@ export type SweepstakeSummary = {
   drawCompleted: boolean;
   configured: boolean;
   adminConfigured: boolean;
+  adminCount: number;
   participants: Array<{
     id: string;
     fullName: string;
@@ -54,6 +56,17 @@ export type SweepstakeSummary = {
     assignedTeam: string | null;
     status: ParticipantStatus;
     eliminationMessage: string | null;
+    createdAt: string;
+  }>;
+  accounts: Array<{
+    id: string;
+    fullName: string;
+    email: string;
+    department: string;
+    location: string;
+    isAdmin: boolean;
+    status: ParticipantStatus;
+    assignedTeam: string | null;
     createdAt: string;
   }>;
   eliminatedParticipants: Array<{
@@ -87,6 +100,7 @@ type ParticipantAuthRow = {
   email: string;
   full_name: string;
   pin_hash: string | null;
+  is_admin: boolean;
 };
 
 function getFallbackSummary(): SweepstakeSummary {
@@ -99,7 +113,9 @@ function getFallbackSummary(): SweepstakeSummary {
     drawCompleted: false,
     configured: false,
     adminConfigured: false,
+    adminCount: 0,
     participants: [],
+    accounts: [],
     eliminatedParticipants: [],
   };
 }
@@ -196,6 +212,7 @@ async function readParticipants() {
       department,
       phone,
       location,
+      is_admin,
       team_preferences,
       assigned_team,
       assignment_rank,
@@ -206,6 +223,35 @@ async function readParticipants() {
       updated_at::text
     from participants
     order by created_at asc`,
+  );
+
+  return result.rows.filter((participant) => !participant.is_admin);
+}
+
+async function readAccounts() {
+  if (!isDatabaseConfigured()) {
+    return [] as ParticipantRow[];
+  }
+
+  const result = await query<ParticipantRow>(
+    `select
+      id,
+      full_name,
+      email,
+      department,
+      phone,
+      location,
+      is_admin,
+      team_preferences,
+      assigned_team,
+      assignment_rank,
+      payment_confirmed,
+      status,
+      elimination_message,
+      created_at::text,
+      updated_at::text
+    from participants
+    order by is_admin desc, created_at asc`,
   );
 
   return result.rows;
@@ -224,6 +270,7 @@ async function readParticipantByEmail(email: string) {
       department,
       phone,
       location,
+      is_admin,
       team_preferences,
       assigned_team,
       assignment_rank,
@@ -244,7 +291,7 @@ async function readParticipantAuthByEmail(email: string) {
   }
 
   return queryOne<ParticipantAuthRow>(
-    `select email, full_name, pin_hash
+    `select email, full_name, pin_hash, is_admin
     from participants
     where email = $1`,
     [normalizeEmail(email)],
@@ -259,9 +306,10 @@ export async function getSweepstakeSummary(): Promise<SweepstakeSummary> {
   }
 
   let participants: ParticipantRow[];
+  let accounts: ParticipantRow[];
 
   try {
-    participants = await readParticipants();
+    [participants, accounts] = await Promise.all([readParticipants(), readAccounts()]);
   } catch {
     return fallbackSummary;
   }
@@ -274,7 +322,8 @@ export async function getSweepstakeSummary(): Promise<SweepstakeSummary> {
     entryFee: ENTRY_FEE,
     drawCompleted: participants.some((participant) => Boolean(participant.assigned_team)),
     configured: true,
-    adminConfigured: hasAdminAccess(),
+    adminConfigured: accounts.some((account) => account.is_admin),
+    adminCount: accounts.filter((account) => account.is_admin).length,
     participants: participants.map((participant) => ({
       id: participant.id,
       fullName: participant.full_name,
@@ -285,6 +334,17 @@ export async function getSweepstakeSummary(): Promise<SweepstakeSummary> {
       status: participant.status,
       eliminationMessage: participant.elimination_message,
       createdAt: participant.created_at,
+    })),
+    accounts: accounts.map((account) => ({
+      id: account.id,
+      fullName: account.full_name,
+      email: account.email,
+      department: account.department,
+      location: account.location,
+      isAdmin: account.is_admin,
+      status: account.status,
+      assignedTeam: account.assigned_team,
+      createdAt: account.created_at,
     })),
     eliminatedParticipants: participants
       .filter((participant) => participant.status === "eliminated")
@@ -380,6 +440,38 @@ export async function authenticateParticipant(email: string, pin: string) {
     throw error;
   }
 
+  if (participant.is_admin) {
+    const error = new Error("This account is an admin account. Use the admin login.");
+    error.name = "UNAUTHORIZED";
+    throw error;
+  }
+
+  return {
+    email: participant.email,
+    fullName: participant.full_name,
+  };
+}
+
+export async function authenticateAdmin(email: string, pin: string) {
+  if (!isDatabaseConfigured()) {
+    throw new Error("Database is not configured yet.");
+  }
+
+  const participant = await readParticipantAuthByEmail(email);
+  const cleanedPin = validatePin(pin);
+
+  if (!participant || !verifyPin(cleanedPin, participant.pin_hash)) {
+    const error = new Error("Invalid email or PIN.");
+    error.name = "UNAUTHORIZED";
+    throw error;
+  }
+
+  if (!participant.is_admin) {
+    const error = new Error("This account does not have admin access.");
+    error.name = "UNAUTHORIZED";
+    throw error;
+  }
+
   return {
     email: participant.email,
     fullName: participant.full_name,
@@ -395,6 +487,10 @@ export async function getParticipantTracker(email: string): Promise<ParticipantT
 
   if (!participant) {
     throw new Error("No signup was found for that email address.");
+  }
+
+  if (participant.is_admin) {
+    throw new Error("Admin accounts do not have a participant tracker.");
   }
 
   const teamSnapshot = participant.assigned_team
@@ -534,6 +630,65 @@ export async function markTeamEliminated(teamName: string, eliminated: boolean) 
       eliminated ? buildEliminationMessage(team) : null,
       participant.id,
     ],
+  );
+
+  return {
+    summary: await getSweepstakeSummary(),
+  };
+}
+
+export async function setAccountAdminStatus(accountId: string, isAdmin: boolean) {
+  if (!isDatabaseConfigured()) {
+    throw new Error("Database is not configured yet.");
+  }
+
+  const account = await queryOne<ParticipantRow>(
+    `select
+      id,
+      full_name,
+      email,
+      department,
+      phone,
+      location,
+      is_admin,
+      team_preferences,
+      assigned_team,
+      assignment_rank,
+      payment_confirmed,
+      status,
+      elimination_message,
+      created_at::text,
+      updated_at::text
+    from participants
+    where id = $1`,
+    [accountId],
+  );
+
+  if (!account) {
+    throw new Error("That account no longer exists.");
+  }
+
+  if (account.is_admin && !isAdmin) {
+    const adminCount = await queryOne<{ count: string }>(
+      `select count(*)::text as count
+      from participants
+      where is_admin = true`,
+    );
+
+    if ((adminCount ? Number(adminCount.count) : 0) <= 1) {
+      throw new Error("You need to keep at least one admin account in the system.");
+    }
+  }
+
+  await query(
+    `update participants
+    set is_admin = $1,
+        assigned_team = case when $1 then null else assigned_team end,
+        assignment_rank = case when $1 then null else assignment_rank end,
+        status = case when $1 then 'pending' else 'pending' end,
+        elimination_message = case when $1 then null else elimination_message end
+    where id = $2`,
+    [isAdmin, accountId],
   );
 
   return {

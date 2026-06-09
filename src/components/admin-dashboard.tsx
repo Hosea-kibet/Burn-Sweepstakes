@@ -76,6 +76,10 @@ export function AdminDashboard({
             <strong>{summary.drawCompleted ? "Done" : "Pending"}</strong>
             <span>draw status</span>
           </article>
+          <article>
+            <strong>{summary.adminCount}</strong>
+            <span>admins</span>
+          </article>
         </div>
 
         <div className="admin-actions">
@@ -151,6 +155,54 @@ export function AdminDashboard({
         {message ? (
           <p className={`message-text ${message.tone}`}>{message.text}</p>
         ) : null}
+
+        <div className="participant-board">
+          {summary.accounts.map((account) => (
+            <article key={account.id} className="participant-row-card">
+              <strong>
+                {account.fullName}
+                {account.isAdmin ? " • admin" : ""}
+              </strong>
+              <span>
+                {account.email} • {account.assignedTeam ?? account.status}
+              </span>
+              <div className="admin-button-row">
+                <button
+                  className="secondary-button"
+                  type="button"
+                  disabled={isPending || account.isAdmin}
+                  onClick={() => {
+                    setMessage(null);
+                    startTransition(async () => {
+                      await sendRequest("/api/admin/users/role", {
+                        accountId: account.id,
+                        isAdmin: true,
+                      });
+                    });
+                  }}
+                >
+                  Make admin
+                </button>
+                <button
+                  className="secondary-button"
+                  type="button"
+                  disabled={isPending || !account.isAdmin}
+                  onClick={() => {
+                    setMessage(null);
+                    startTransition(async () => {
+                      await sendRequest("/api/admin/users/role", {
+                        accountId: account.id,
+                        isAdmin: false,
+                      });
+                    });
+                  }}
+                >
+                  Make participant
+                </button>
+              </div>
+            </article>
+          ))}
+        </div>
 
         <div className="participant-board">
           {summary.participants.map((participant) => (
